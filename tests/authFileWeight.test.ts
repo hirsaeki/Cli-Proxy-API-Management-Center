@@ -65,10 +65,16 @@ describe('auth-file SIWC toggle', () => {
   test('enables SIWC and ignores untouched, unchanged, or non-Codex state', () => {
     const editor = { ...makeEditor({}, ''), useSiwc: true, useSiwcTouched: true };
     expect(buildAuthFileFieldsPatch(editor, resolveError)).toEqual({ use_siwc: true });
-    expect(buildAuthFileFieldsPatch({ ...editor, useSiwcTouched: false }, resolveError)).toEqual({});
+    expect(buildAuthFileFieldsPatch({ ...editor, useSiwcTouched: false }, resolveError)).toEqual(
+      {}
+    );
     expect(buildAuthFileFieldsPatch({ ...editor, useSiwc: false }, resolveError)).toEqual({});
-    expect(buildAuthFileFieldsPatch({ ...editor, providerKey: 'claude' }, resolveError)).toEqual({});
-    expect(buildAuthFileFieldsPatch({ ...editor, json: { use_siwc: true } }, resolveError)).toEqual({});
+    expect(buildAuthFileFieldsPatch({ ...editor, providerKey: 'claude' }, resolveError)).toEqual(
+      {}
+    );
+    expect(buildAuthFileFieldsPatch({ ...editor, json: { use_siwc: true } }, resolveError)).toEqual(
+      {}
+    );
   });
 });
 
@@ -130,9 +136,9 @@ describe('auth-file disable cooling patch', () => {
   });
 
   test('does not patch an untouched or unchanged override', () => {
-    expect(buildAuthFileFieldsPatch(makeEditor({ disable_cooling: true }, ''), resolveError)).toEqual(
-      {}
-    );
+    expect(
+      buildAuthFileFieldsPatch(makeEditor({ disable_cooling: true }, ''), resolveError)
+    ).toEqual({});
     expect(
       buildAuthFileFieldsPatch(
         {
@@ -184,5 +190,48 @@ describe('auth-file excluded models patch', () => {
         resolveError
       )
     ).toEqual({ excluded_models: [] });
+  });
+});
+
+describe('Vertex service-account location metadata patch', () => {
+  const sa = { service_account: { type: 'service_account' } };
+  const edited = {
+    ...makeEditor({ ...sa, location: 'europe-west4' }, ''),
+    providerKey: 'vertex',
+    vertexLocation: { choice: 'eu', custom: 'europe-west4', touched: true } as const,
+  };
+
+  test('patches only the explicitly selected location', () => {
+    expect(buildAuthFileFieldsPatch(edited, resolveError)).toEqual({ location: 'eu' });
+    for (const json of [sa, edited.json]) {
+      expect(
+        buildAuthFileFieldsPatch(
+          {
+            ...edited,
+            json,
+            vertexLocation: { ...edited.vertexLocation, touched: false },
+          },
+          resolveError
+        )
+      ).toEqual({});
+    }
+  });
+
+  test('rejects invalid locations and does not apply the draft to other providers', () => {
+    expect(() =>
+      buildAuthFileFieldsPatch(
+        {
+          ...edited,
+          vertexLocation: { choice: 'custom', custom: '', touched: true },
+        },
+        resolveError
+      )
+    ).toThrow('auth_files.vertex_location_invalid');
+    expect(buildAuthFileFieldsPatch({ ...edited, providerKey: 'gemini' }, resolveError)).toEqual(
+      {}
+    );
+    expect(
+      buildAuthFileFieldsPatch({ ...edited, json: { api_key: 'test-only' } }, resolveError)
+    ).toEqual({});
   });
 });

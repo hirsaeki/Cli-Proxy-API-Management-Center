@@ -4,6 +4,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { Sheet } from '@/components/ui/Sheet';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { Select } from '@/components/ui/Select';
 import { Input } from '@/components/ui/Input';
 import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { useNotificationStore } from '@/stores';
@@ -22,6 +23,7 @@ import { AuthFileExcludedModelsField } from './AuthFileExcludedModelsField';
 import { AuthFilePolicyFields } from './AuthFilePolicyFields';
 import { FieldLabel } from '@/components/ui/FieldLabel';
 import { credentialPolicyError, readCredentialPolicy } from '../credentialPolicy';
+import { invalidVertexLocation } from '../vertexLocation';
 import styles from './AuthFileDetailsSheet.module.scss';
 
 /** API 边界归一化补写的派生字段——INFO 视图里只展示后端原始形状，避免重复噪音。 */
@@ -159,6 +161,7 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
               !editor?.json ||
               Boolean(editor?.headersTouched && editor.headersError) ||
               Boolean(editor?.weightError) ||
+              invalidVertexLocation(editor?.vertexLocation) ||
               Boolean(credentialPolicyError(editor?.policy))
             }
           >
@@ -195,6 +198,47 @@ export function AuthFileDetailsSheet(props: AuthFileDetailsSheetProps) {
               </div>
               {editor.json && (
                 <div className={styles.fields}>
+                  {editor.vertexLocation && (
+                    <div className={styles.locationField}>
+                      <label
+                        className={styles.label}
+                        htmlFor={`${hintIdBase}-vertexLocationSelect`}
+                      >
+                        {t('auth_files.vertex_location_label')}
+                      </label>
+                      <p className={styles.locationScope} id={`${hintIdBase}-vertexLocation`}>
+                        {t('auth_files.vertex_location_hint')}
+                      </p>
+                      <Select
+                        id={`${hintIdBase}-vertexLocationSelect`}
+                        ariaLabel={t('auth_files.vertex_location_label')}
+                        ariaDescribedBy={`${hintIdBase}-vertexLocation`}
+                        value={editor.vertexLocation.choice}
+                        options={[
+                          { value: 'global', label: 'Global' },
+                          { value: 'us', label: 'US' },
+                          { value: 'eu', label: 'EU' },
+                          { value: 'custom', label: t('auth_files.vertex_location_custom') },
+                        ]}
+                        disabled={disableControls || editor.saving}
+                        onChange={(value) => onChange('vertexLocationChoice', value)}
+                      />
+                      {editor.vertexLocation.choice === 'custom' && (
+                        <Input
+                          label={t('auth_files.vertex_location_custom')}
+                          placeholder="us-central1"
+                          value={editor.vertexLocation.custom}
+                          error={
+                            invalidVertexLocation(editor.vertexLocation)
+                              ? t('auth_files.vertex_location_invalid')
+                              : undefined
+                          }
+                          disabled={disableControls || editor.saving}
+                          onChange={(event) => onChange('vertexLocationCustom', event.target.value)}
+                        />
+                      )}
+                    </div>
+                  )}
                   <Input
                     label={t('auth_files.prefix_label')}
                     value={editor.prefix}

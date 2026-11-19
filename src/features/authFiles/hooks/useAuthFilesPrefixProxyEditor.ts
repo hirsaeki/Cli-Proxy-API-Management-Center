@@ -33,6 +33,14 @@ import {
   type CredentialWeightError,
 } from '@/utils/credentialWeight';
 
+import {
+  changeVertexLocation,
+  invalidVertexLocation,
+  readVertexLocation,
+  resolveVertexLocation,
+  type VertexLocationDraft,
+} from '../vertexLocation';
+
 type AuthFileHeaders = Record<string, string>;
 type AuthFileHeadersErrorKey =
   | 'auth_files.headers_invalid_json'
@@ -41,7 +49,8 @@ type AuthFileHeadersErrorKey =
 type AuthFileContentErrorKey =
   'auth_files.prefix_proxy_invalid_json' | 'auth_files.prefix_proxy_html_challenge';
 type AuthFileWeightErrorKey = 'auth_files.weight_invalid_integer' | 'auth_files.weight_invalid_max';
-type AuthFileEditorErrorKey = AuthFileHeadersErrorKey | AuthFileWeightErrorKey;
+type AuthFileEditorErrorKey =
+  AuthFileHeadersErrorKey | AuthFileWeightErrorKey | 'auth_files.vertex_location_invalid';
 
 export type PrefixProxyEditorField =
   | CredentialPolicyField
@@ -51,6 +60,8 @@ export type PrefixProxyEditorField =
   | 'weight'
   | 'disableCooling'
   | 'websockets'
+  | 'vertexLocationChoice'
+  | 'vertexLocationCustom'
   | 'usingApi'
   | 'useSiwc'
   | 'note'
@@ -82,6 +93,7 @@ export type PrefixProxyEditorState = {
   websocketsTouched: boolean;
   useSiwc: boolean;
   useSiwcTouched: boolean;
+  vertexLocation?: VertexLocationDraft;
   usingApi: boolean;
   usingApiTouched: boolean;
   note: string;
@@ -294,6 +306,12 @@ export const buildAuthFileFieldsPatch = (
   const original = editor.json ?? {};
   const patch: AuthFileFieldsPatch = {};
 
+  if (readVertexLocation(editor.providerKey, original) && editor.vertexLocation?.touched) {
+    const location = resolveVertexLocation(editor.vertexLocation);
+    if (location === undefined) throw new Error(resolveError('auth_files.vertex_location_invalid'));
+    if (location !== original.location) patch.location = location;
+  }
+
   const originalPrefix = normalizeTextField(original.prefix);
   const nextPrefix = editor.prefix.trim();
   if (nextPrefix !== originalPrefix) {
@@ -410,6 +428,8 @@ const buildPrefixProxyUpdatedText = (
   if (!editor?.json) return editor?.rawText ?? '';
   const patch = buildAuthFileFieldsPatch(editor, resolveError);
   let next: Record<string, unknown> = { ...editor.json };
+  if (patch.location !== undefined) next.location = patch.location;
+
   if (patch.prefix !== undefined) {
     if (patch.prefix) {
       next.prefix = patch.prefix;
@@ -495,6 +515,7 @@ export function useAuthFilesPrefixProxyEditor(
   const hasBlockingValidationError = Boolean(
     (prefixProxyEditor?.headersTouched && prefixProxyEditor.headersError) ||
     prefixProxyEditor?.weightError ||
+    invalidVertexLocation(prefixProxyEditor?.vertexLocation) ||
     credentialPolicyError(prefixProxyEditor?.policy)
   );
   const prefixProxyUpdatedText =
@@ -508,7 +529,9 @@ export function useAuthFilesPrefixProxyEditor(
       : null;
 
   const prefixProxyDirty =
-    hasKeys(prefixProxyPatch) || Boolean(credentialPolicyError(prefixProxyEditor?.policy));
+    hasKeys(prefixProxyPatch) ||
+    invalidVertexLocation(prefixProxyEditor?.vertexLocation) ||
+    Boolean(credentialPolicyError(prefixProxyEditor?.policy));
 
   const closePrefixProxyEditor = () => {
     editorRequestRef.current += 1;
@@ -641,6 +664,7 @@ export function useAuthFilesPrefixProxyEditor(
           useSiwc: supportsAuthFileSiwc(providerKey) && readAuthFileUseSiwc(json),
           useSiwcTouched: false,
           usingApi,
+          vertexLocation: readVertexLocation(providerKey, json),
           usingApiTouched: false,
           note,
           noteTouched: false,
@@ -704,6 +728,13 @@ export function useAuthFilesPrefixProxyEditor(
       }
       if (field === 'useSiwc') {
         return { ...prev, useSiwc: Boolean(value), useSiwcTouched: true };
+      }
+      if (field === 'vertexLocationChoice' || field === 'vertexLocationCustom') {
+        if (!prev.vertexLocation) return prev;
+        return {
+          ...prev,
+          vertexLocation: changeVertexLocation(prev.vertexLocation, field, String(value)),
+        };
       }
       if (field === 'usingApi') {
         return { ...prev, usingApi: Boolean(value), usingApiTouched: true };
