@@ -21,6 +21,7 @@ type AuthFileStatusResponse = { status: string; disabled: boolean };
 export type AuthFileLookup = { name: string; authIndex?: string };
 type AuthFileEntry = AuthFilesResponse['files'][number];
 export type AuthFileFieldsPatch = {
+  location?: string;
   request_retry?: number | null;
   model_aliases?: Array<{
     name: string;
