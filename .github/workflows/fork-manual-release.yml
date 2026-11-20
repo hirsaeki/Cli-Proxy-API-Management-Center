@@ -1,0 +1,119 @@
+name: Publish Management Center fork
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New fork release tag, e.g. v1.28.3-fork.1'
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: management-center-fork-manual-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'hirsaeki/Cli-Proxy-API-Management-Center' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      digest: ${{ steps.package.outputs.digest }}
+    steps:
+      - name: Validate tag
+        id: validate
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ${#RELEASE_TAG} -gt 64 ||
+            ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-fork\.[1-9][0-9]*$ ]]; then
+            echo 'Use an unused fork tag such as v1.28.3-fork.1.'
+            exit 1
+          fi
+          printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.4.3'
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify and build single-file management UI
+        run: bun run verify
+        env:
+          VERSION: ${{ steps.validate.outputs.tag }}
+      - name: Package the verified HTML
+        id: package
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ -f dist/index.html && ! -L dist/index.html && -s dist/index.html ]]
+          mkdir release-artifact
+          cp dist/index.html release-artifact/management.html
+          digest="$(sha256sum release-artifact/management.html)"
+          printf 'digest=%s\n' "${digest%% *}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: management-html
+          path: release-artifact/management.html
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: github.repository == 'hirsaeki/Cli-Proxy-API-Management-Center' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: management-html
+          path: release-artifact
+      - name: Create a new tag and publish the verified HTML
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          EXPECTED_DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ ${#RELEASE_TAG} -le 64 &&
+            "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-fork\.[1-9][0-9]*$ ]]
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ && "$EXPECTED_DIGEST" =~ ^[a-f0-9]{64}$ ]]
+          html=release-artifact/management.html
+          [[ -f "$html" && ! -L "$html" && -s "$html" ]]
+          printf '%s  %s\n' "$EXPECTED_DIGEST" "$html" | sha256sum --check --strict
+          repo="$GITHUB_REPOSITORY"
+
+          # Include any existing drafts in the duplicate check, and fail on API errors.
+          releases="$(gh api --paginate "repos/$repo/releases?per_page=100" --jq ".[].tag_name")"
+          if grep -Fxq -- "$RELEASE_TAG" <<< "$releases"; then
+            echo 'A release or draft already uses this tag. Nothing was changed.'
+            exit 1
+          fi
+
+          # Create-only API: an existing tag is an error, never updated or reused.
+          tag_sha="$(gh api --method POST "repos/$repo/git/refs" \
+            -f "ref=refs/tags/$RELEASE_TAG" -f "sha=$GITHUB_SHA" --jq .object.sha)"
+          [[ "$tag_sha" == "$GITHUB_SHA" ]]
+          current_sha="$(gh api "repos/$repo/git/ref/tags/$RELEASE_TAG" --jq .object.sha)"
+          [[ "$current_sha" == "$GITHUB_SHA" ]]
+          if ! gh release create "$RELEASE_TAG" "$html" --repo "$repo" \
+            --verify-tag --target "$GITHUB_SHA" --latest --title "$RELEASE_TAG" \
+            --notes "Management Center fork build from commit $GITHUB_SHA."; then
+            echo 'Release publication failed after the tag was created. Inspect the tag and any draft before retrying; this workflow never overwrites them.'
+            exit 1
+          fi
