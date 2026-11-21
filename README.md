@@ -47,6 +47,16 @@ The API address is detected from the page URL and can be changed manually.
 > [!NOTE]
 > The **management key** signs you into this UI. Client keys in `access.api-keys` authorize requests to the proxy — they are not interchangeable.
 
+For a locally stored Vertex service-account credential, open **Auth files → Regional failover**.
+This requires the [CPA fork failover management API](https://github.com/hirsaeki/CLIProxyAPI/issues/173);
+older servers and remote credential stores cannot change this setting from the panel. The configured
+location stays primary. Enabling automatic mode allows fallbacks wherever CPA has fresh official
+availability for the same model, including other geographies or the global endpoint. Global is not
+a data-residency guarantee. Unset credentials are off unless they already use a legacy per-model
+policy, which remains restricted until explicitly changed. CPA saves the setting without a restart.
+The control does not download the credential file. It uses the revision returned by CPA to reject
+changes made from stale credential state.
+
 <details>
 <summary><strong>Connection settings & remote access</strong></summary>
 

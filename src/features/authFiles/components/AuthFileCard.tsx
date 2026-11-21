@@ -34,6 +34,7 @@ import { resolveAuthFileQuotaType } from '@/features/authFiles/logic';
 import type { AuthFileStatusBarData } from '@/features/authFiles/hooks/useAuthFilesStatusBarCache';
 import { AuthFileQuotaSection } from '@/features/authFiles/components/AuthFileQuotaSection';
 import { AuthFileCooldownSection } from './AuthFileCooldownSection';
+import { VertexFailoverControl } from './VertexFailoverControl';
 import { getSiwcBindingStatus, supportsSiwcBinding } from '@/features/oauth/siwcBinding';
 import { SiwcStatusBadge } from '@/features/oauth/components/SiwcStatusBadge';
 import styles from './AuthFileCard.module.scss';
@@ -279,6 +280,14 @@ export function AuthFileCard(props: AuthFileCardProps) {
               <IconModelCluster size={14} />
               {t('auth_files.models_button')}
             </Button>
+          )}
+          {providerKey === 'vertex' && !isRuntimeOnly && (
+            <VertexFailoverControl
+              key={JSON.stringify([file.name, authIndexKey])}
+              name={file.name}
+              authIndex={authIndexKey ?? undefined}
+              disabled={disableControls}
+            />
           )}
           {!isRuntimeOnly && (
             <div className={styles.utilityActions}>
